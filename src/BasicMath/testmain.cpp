@@ -4,19 +4,25 @@ using namespace std;
 
 #include "BasicMath/Core.h"
 
-template<size_t I>
-size_t F() {
-	return F<I + 1>() + F<I + 2>();
+template<typename _BackElem, typename ...ArgTypes>
+void PrintPointImp(const lpq::BasicPoint<_BackElem, ArgTypes...>& point) {
+	PrintPointImp<ArgTypes...>(point._GetRest());
+	cout << "," << point.value;
 }
 
-template<>
-size_t F<5>() { return 1; }
+template<typename Back>
+void PrintPointImp(const lpq::BasicPoint<Back>& point) {
+	cout << point.value;
+}
 
-template<>
-size_t F<6>() { return 1; }
+template<typename PointType>
+void PrintPoint(const PointType& point) {
+	cout << "(";
+	PrintPointImp(point);
+	cout << ")" << endl;
+}
 
 int main() {
-	cout << F<3>() << endl;
 	auto sizeof_tuple = [](auto t) {cout << "sizeof:" << sizeof(t) << endl; };
 	tuple<char> t1;
 	//sizeof_tuple(t1);
@@ -40,6 +46,33 @@ int main() {
 	sizeof_tuple(p2);
 	sizeof_tuple(p3);
 	sizeof_tuple(p4);
-	auto x = p1.at<0>();
+	PrintPoint(p1);
+	PrintPoint(p2);
+	PrintPoint(p3);
+	PrintPoint(p4);
+	cout << "------" << endl;
+	auto p5 = p1 + 2.0;
+	PrintPoint(p5);
+	auto p6 = p1 - 2.0;
+	PrintPoint(p6);
+	auto p7 = p1 * 2.0;
+	PrintPoint(p7);
+	auto p8 = p1 / 2.0;
+	PrintPoint(p8);
+	p1 += p1;
+	PrintPoint(p1);
+	p1 -= p1;
+	PrintPoint(p1);
+	p5 += -1;
+	PrintPoint(p5);
+	p5 -= -1;
+	PrintPoint(p5);
+	p5 *= -1;
+	PrintPoint(p5);
+	p5 /= -1;
+	PrintPoint(p5);
+	cout << p4.dot(p3) << endl;
+	auto p = lpq::make_point(1, 2, 3);
+	cout << (p1 == p3);
 	return 0;
 }
