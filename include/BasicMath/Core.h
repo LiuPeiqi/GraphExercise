@@ -63,10 +63,11 @@ namespace lpq {
 		_Derived& operator=(const _Derived&)noexcept = default;
 		~BasicPoint() noexcept = default;
 		const _Base& _GetRest() const { return *this; }
-		template<size_t Index> typename std::enable_if<(Index + 1) == dimension, ValueType>::type 
-			at() { return value; }
-		template<size_t Index> typename std::enable_if<(Index + 1) < dimension, typename _Base::ValueType>::type 
-			at() { return _Base::at<Index>(); }
+		template<size_t Index> typename std::enable_if<(Index + 1) == dimension, ValueType>::type& 
+			at() noexcept { return value; }
+		template<size_t Index> typename std::enable_if<(Index + 1) < dimension, typename _Base::ValueType>::type&
+			at() noexcept { return _Base::at<Index>(); }
+		template<size_t Index> ValueType at() const noexcept { return at<Index>(); }
 
 		_Derived operator+ (const _Derived& right) const noexcept {
 			return _Derived(_Base::operator+(right._GetRest()), value + right.value);
@@ -167,5 +168,15 @@ namespace lpq {
 		static_assert(_CHECK_ARGS_TYPES<ArgTypes...>(), "Argements Types of Point is not same!");
 		return BasicPoint<ArgTypes...>(args...);
 	}
+
+	template<typename ValueType>
+	class Matrix {//alloc memory and delete
+
+	};
+
+	template<typename ValueType, typename OrgType>
+	class MatrixView {// use the OrgType memory
+
+	};
 }
 #endif // !GRAPH_EXERCISE_BASIC_MATH_CORE_H
