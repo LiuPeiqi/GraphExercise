@@ -8,3 +8,8 @@
 /GraphExercise_msvc/.vs/GraphExercise_msvc/v15
 /GraphExercise_msvc/BasicMath/Release
 /GraphExercise_msvc/Release
+/GraphExercise_msvc/x64/Debug
+/GraphExercise_msvc/x64/Release
+/GraphExercise_msvc/BasicMath/x64/Debug
+/GraphExercise_msvc/BasicMath/x64/Release
+/GraphExercise_msvc/UnitTest/Debug
