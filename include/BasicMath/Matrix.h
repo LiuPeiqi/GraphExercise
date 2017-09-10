@@ -1,8 +1,10 @@
 #ifndef GRAPH_EXERCISE_BASIC_MATH_CORE_H
 #define GRAPH_EXERCISE_BASIC_MATH_CORE_H
+#include <algorithm>
 #include <cassert>
 #include <iterator>
 #include <memory>
+#include <functional>
 #include <type_traits>
 #include <utility>
 namespace lpq {
@@ -185,14 +187,56 @@ namespace lpq {
 	template<typename ValueType>
 	class BasicMatrix {//if not change org data ptr, it will not delete memory;
 	public:
-		BasicMatrix():data(nullptr), alloc_addr(nullptr), row(0), col(0), col_step(0){}
-		BasicMatrix(size_t row, size_t column, ValueType* data_addr) : 
-			data(data_addr), alloc_addr(nullptr), row(row), col(column), col_step(1) {}
-		BasicMatrix(size_t row, size_t column) :BasicMatrix(row, column, new ValueType[row*column]) { alloc_addr = data; }
-		BasicMatrix(const BasicMatrix& other) :BasicMatrix(other.row, other.col){/*copy at pos*/}
-		BasicMatrix(BasicMatrix&& other):alloc_addr(nullptr) noexcept { swap(other); }
-		~BasicMatrix() { delete[] alloc_addr; }
-		void swap(BasicMatrix& right) noexcept{
+		using Matrix = BasicMatrix<ValueType>;
+
+		/* construct and alloc and swap */
+
+		BasicMatrix(size_t row, size_t column, ValueType* data_addr, std::shared_ptr<ValueType> alloc_addr) :
+			data(data_addr), alloc_addr(alloc_addr), row(row), col(column), col_step(1) {}
+		BasicMatrix() :BasicMatrix(0, 0, nullptr, nullptr) {}
+		BasicMatrix(size_t row, size_t column, ValueType* data_addr) : BasicMatrix(row, column, data_addr, nullptr) {}
+		BasicMatrix(size_t row, size_t column) :BasicMatrix(row, column, nullptr, 
+			std::shared_ptr<ValueType>(new ValueType[row*column], std::default_delete<ValueType[]>())) {
+			data = alloc_addr.get(); }
+		BasicMatrix(const Matrix& other) = default;
+		BasicMatrix(Matrix&& other) noexcept { swap(other); }
+		~BasicMatrix() = default;
+		Matrix& Alloc(size_t row, size_t column) {
+			swap(Matrix(row, column));
+			return *this;
+		}
+		Matrix& Alloc(size_t row, size_t column, ValueType* data_addr) {
+			swap(Matrix(row, column, data_addr));
+			return *this;
+		}
+		Matrix Clone() const{
+			BasicMatrix tmp(row, col);
+			ValueTypePtr _data = tmp.data;
+			auto end = EndByRow();
+			for (auto iter = BeginByRow(); iter != end; ++iter) {
+				*_data++ = *iter;
+			}
+			return std::move(tmp);
+		}
+		Matrix& operator=(Matrix mat) {
+			swap(mat);
+			return *this;
+		}
+		bool operator==(const Matrix& right)const  {
+			if (row != right.row || col != right.col) {
+				return false;
+			}
+			auto end = EndByRow();
+			auto right_iter = right.BeginByRow();
+			for (auto iter = BeginByRow(); iter != end; ++iter) {
+				if (*iter != *right_iter++) {
+					return false;
+				}
+			}
+			return true;
+		}
+		bool operator!=(const Matrix& right) const { return !operator==(right); }
+		void swap(Matrix& right) noexcept{
 			std::swap(data, right.data);
 			std::swap(alloc_addr, right.alloc_addr);
 			std::swap(row, right.row);
@@ -200,36 +244,43 @@ namespace lpq {
 			std::swap(col_step, right.col_step);
 		}
 
-		bool Empty() const noexcept { return 0 == row || 0 == col; }
+		/* size info */
 
-		BasicMatrix& Transpose() {
+		bool Empty() const noexcept { return 0 == row || 0 == col; }
+		std::pair<size_t, size_t> Size()const noexcept { return std::make_pair(row, col); }
+
+		/* transpose */
+
+		Matrix& Transpose() {
 			if (Empty()) { return *this; }
-			col_step = col_step == 1 ? row : 1;
+			col_step = col_step == 1 ? col : 1;
 			std::swap(row, col);
 			return *this;
 		}
-		BasicMatrix& Arrange() {
+		Matrix& Arrange() {
 			if (Empty()) { return *this; }
 			if (1 == col_step) { return *this; }
-			ValueTypePtr new_data = new ValueType[row * col];
+			auto new_addr = std::shared_ptr<ValueType>(new ValueType[row * col], std::default_delete<ValueType[]>());
+			ValueTypePtr new_data = new_addr.get();
 			col_step = 1;
-			std::swap(row, col);
 			ValueTypePtr iter = new_data;
-			for (size_t i = 0; i < col; ++i) {
+			for (size_t i = 0; i < row; ++i) {
 				ValueTypePtr org_it = data + i;
-				for (size_t j = 0; j < row; ++j) {
-					std::swap(*iter, *org_it);
+				for (size_t j = 0; j < col; ++j) {
+					*iter = std::move(*org_it);
 					++iter;
-					org_it += col;
+					org_it += row;
 				}
 			}
-			std::swap(new_data, data);
-			delete[] new_data;
+			alloc_addr = new_addr;
+			data = alloc_addr.get();
 			return *this;
 		}
 
+		/* matrix index and iterator */
+
 		ValueType& At(size_t row, size_t column) noexcept  {
-			std::assert((row < this->row) && (column < this->col));
+			assert((row < this->row) && (column < this->col));
 			size_t step = this->col;
 			if (1 != col_step) {
 				std::swap(row, column);
@@ -249,64 +300,162 @@ namespace lpq {
 		public:
 			using _Self = Iterator<ValueType>;
 			Iterator(const _Self &right):
-				_iterator(right._iterator.make_clone_ptr()){}
+				_iterator(right._iterator->make_clone_ptr()){}
 			Iterator(_Self && right) { std::swap(_iterator, right._iterator); }
-			_Self& operator=(_Self tmp) { std::swap(iterator, tmp._iterator); return *this; }
+			_Self& operator=(_Self tmp) { std::swap(_iterator, tmp._iterator); return *this; }
 			_Self& operator++() { _iterator->operator++(); return *this; }
 			_Self& operator--() { _iterator->operator--(); return *this; }
 			_Self operator++(int) { auto tmp = *this; _iterator->operator++(); return tmp; }
 			_Self operator--(int) { auto tmp = *this; _iterator->operator--(); return tmp; }
 			reference operator*() const { return _iterator->operator*(); }
 			pointer operator->() const { return _iterator->operator->(); }
-			bool operator==(const _Self& right) const { return _iterator->operator==(right._iterator); }
-			bool operator!=(const _Self& right) const { return _iterator->operator!=(right._iterator); }
-			bool operator<(const _Self& right) const { return _iterator->operator<(right._iterator); }
-			bool operator>=(const _Self& right) const { return _iterator->operator>=(right._iterator); }
-			bool operator>(const _Self& right) const { return _iterator->operator>(right._iterator); }
-			bool operator<=(const _Self& right) const { return _iterator->operator<=(right._iterator); }
+			bool operator==(const _Self& right) const { return _iterator->operator==(*(right._iterator)); }
+			bool operator!=(const _Self& right) const { return _iterator->operator!=(*(right._iterator)); }
+			bool operator<(const _Self& right) const { return _iterator->operator<(*(right._iterator)); }
+			bool operator>=(const _Self& right) const { return _iterator->operator>=(*(right._iterator)); }
+			bool operator>(const _Self& right) const { return _iterator->operator>(*(right._iterator)); }
+			bool operator<=(const _Self& right) const { return _iterator->operator<=(*(right._iterator)); }
 			reference operator[](difference_type n) const { return _iterator->operator[](n); }
 			_Self& operator+=(difference_type n) { _iterator->operator+=(n); return *this; }
 			_Self& operator-=(difference_type n) { _iterator->operator-=(n); return *this; }
 			_Self operator+(difference_type n) const { _Self tmp(_iterator->make_clone_ptr()); tmp._iterator->operator+=(n); return tmp; }
 			_Self operator-(difference_type n) const { return operator+(-n); }
-			difference_type operator-(const _Self& before) { return _iterator->operator-(before._iterator); }
+			difference_type operator-(const _Self& before) const { return _iterator->operator-(*(before._iterator)); }
 		};
 		using iterator = Iterator<ValueType>;
-		iterator RowBegin() const {
-			if (1 == col_step) {
+		iterator BeginByRow() const {
+			if (1 == col_step || std::min(row, col) == 1){
+				return iterator(new IteratorImp<ValueType>(data));
+			}
+			else {
+				return iterator(new TransposeIteratorImp<ValueType>(data, data + row*col, data, col_step));
+			}
+		}
+		iterator EndByRow()const {
+			if (1 == col_step || std::min(row, col) == 1) {
+				return iterator(new IteratorImp<ValueType>(data + row*col));
+			}
+			else {
+				auto end = data + row*col;
+				return iterator(new TransposeIteratorImp<ValueType>(data, end, end, col_step));
+			}
+		}
+		iterator BeginByColumn() const {
+			if (1 != col_step || std::min(row, col) == 1) {
 				return iterator(new IteratorImp<ValueType>(data));
 			}
 			else {
 				return iterator(new TransposeIteratorImp<ValueType>(data, data + row*col, data, col));
 			}
 		}
-		iterator RowEnd()const {
-			if (1 == col_step) {
+		iterator EndByColumn()const {
+			if (1 != col_step || std::min(row, col) == 1) {
 				return iterator(new IteratorImp<ValueType>(data + row*col));
 			}
 			else {
-				return iterator(new TransposeIteratorImp<ValueType>(data, data + row*col, data + row*col, col));
+				auto end = data + row*col;
+				return iterator(new TransposeIteratorImp<ValueType>(data, end, end, col));
 			}
 		}
-		iterator ColBegin() const {
-			if (1 != col_step) {
-				return iterator(new IteratorImp<ValueType>(data));
-			}
-			else {
-				return iterator(new TransposeIteratorImp<ValueType>(data, data + row*col, data, col));
-			}
+
+		/* mathematics */
+
+		Matrix operator+ (const Matrix& right) const {
+			Matrix tmp;
+			BinaryOperate(*this, right, tmp, [](const ValueType& l, const ValueType& r) {return l + r; });
+			return std::move(tmp);
 		}
-		iterator ColEnd()const {
-			if (1 != col_step) {
-				return iterator(new IteratorImp<ValueType>(data + row*col));
-			}
-			else {
-				return iterator(new TransposeIteratorImp<ValueType>(data, data + row*col, data + row*col, col));
-			}
+		template<typename ConstNumType>
+		Matrix operator+ (ConstNumType n) const {
+			Matrix tmp;
+			UnaryOperate(*this, tmp, [=](const ValueType& l) {return static_cast<ValueType>(l + n); });
+			return std::move(tmp);
 		}
-	protected:
+		Matrix operator- (const Matrix& right) const {
+			Matrix tmp;
+			BinaryOperate(*this, right, tmp, [](const ValueType& l, const ValueType& r) {return l - r; });
+			return std::move(tmp);
+		}
+		template<typename ConstNumType>
+		Matrix operator- (ConstNumType n) const {
+			Matrix tmp;
+			UnaryOperate(*this, tmp, [=](const ValueType& l) {return static_cast<ValueType>(l - n); });
+			return std::move(tmp);
+		}
+		template<typename ConstNumType>
+		Matrix operator* (ConstNumType n) const {
+			Matrix tmp;
+			UnaryOperate(*this, tmp, [=](const ValueType& l) {return static_cast<ValueType>(l * n); });
+			return std::move(tmp);
+		}
+		template<typename ConstNumType>
+		Matrix operator/ (ConstNumType n) const {
+			Matrix tmp;
+			UnaryOperate(*this, tmp, [=](const ValueType& l) {return static_cast<ValueType>(l / n); });
+			return std::move(tmp);
+		}
+		Matrix& operator+=(const Matrix& right) {
+			BinaryOperate(*this, right, *this, [](const ValueType& l, const ValueType& r) {return l + r; });
+			return *this;
+		}
+		template<typename ConstNumType>
+		Matrix& operator+= (ConstNumType n) {
+			UnaryOperate(*this, *this, [=](const ValueType& l) {return static_cast<ValueType>(l + n); });
+			return *this;
+		}
+		Matrix& operator-=(const Matrix& right) {
+			BinaryOperate(*this, right, *this, [](const ValueType& l, const ValueType& r) {return l - r; });
+			return *this;
+		}
+		template<typename ConstNumType>
+		Matrix& operator-= (ConstNumType n)  {
+			UnaryOperate(*this, *this, [=](const ValueType& l) {return static_cast<ValueType>(l - n); });
+			return *this;
+		}
+		Matrix DotProduct(const Matrix& right) const {
+			Matrix tmp;
+			BinaryOperate(*this, right, tmp, [](const ValueType& l, const ValueType& r) {return l * r; });
+			return std::move(tmp);
+		}
+		Matrix& DotProductInSelf(const Matrix& right)  {
+			BinaryOperate(*this, right, *this, [](const ValueType& l, const ValueType& r) {return l * r; });
+			return *this;
+		}
+		Matrix DotDivision(const Matrix& right) const {
+			Matrix tmp;
+			BinaryOperate(*this, right, tmp, [](const ValueType& l, const ValueType& r) {return l / r; });
+			return std::move(tmp);
+		}
+		Matrix& DotDivisionInSelf(const Matrix& right) {
+			BinaryOperate(*this, right, *this, [](const ValueType& l, const ValueType& r) {return l / r; });
+			return *this;
+		}
+		Matrix operator*(const Matrix& right) const {
+			assert(col == right.row);
+			Matrix res(row, right.col);
+			auto res_iter = res.BeginByRow();
+			auto row_iter_backup = this->BeginByRow();
+			for (size_t i = 0; i < res.row; ++i) {
+				auto col_iter = right.BeginByColumn();
+				auto row_iter = row_iter_backup;
+				for (size_t j = 0; j < rew.col; ++j) {
+					row_iter = row_iter_backup;
+					*res_iter = ValueType{};
+					for (size_t k = 0; k < col; ++k) {
+						(*res_iter) += (*row_iter * *col_iter);
+						++row_iter;
+						++col_iter;
+					}
+					++res_iter;
+				}
+				row_iter_backup = row_iter;
+			}
+			return std::move(rew);
+		}
+protected:
 		using ValueTypePtr = ValueType*;
-		ValueTypePtr data, alloc_addr;
+		ValueTypePtr data;
+		std::shared_ptr<ValueType> alloc_addr;
 		size_t row, col;
 		int col_step;
 		//------------------iterator------------------------//
@@ -321,11 +470,11 @@ namespace lpq {
 			virtual _Self* make_clone_ptr() const { return new _Self(*this); }
 			virtual _Self& operator++() { ++_cur; return *this; }
 			virtual _Self& operator--() { --_cur; return *this; }
-			virtual _Self operator++(int) { auto tmp = *this; ++(*this); return tmp; }
-			virtual _Self operator--(int) { auto tmp = *this; --(*this); return tmp; }
 			virtual reference operator*() const { return *_cur; }
 			virtual pointer operator->() const { return _cur; }
-			virtual bool operator==(const _Self& right) const { return _cur == right._cur; }
+			virtual bool operator==(const _Self& right) const { 
+				return _cur == right._cur; 
+			}
 			virtual bool operator!=(const _Self& right) const { return !operator==(right); }
 			virtual bool operator<(const _Self& right) const { return _cur < right._cur; }
 			virtual bool operator>=(const _Self& right) const { return !operator<(right); }
@@ -334,11 +483,9 @@ namespace lpq {
 			virtual reference operator[](difference_type n) const { return _cur[n]; }
 			virtual _Self& operator+=(difference_type n) { _cur += n; return *this; }
 			virtual _Self& operator-=(difference_type n) { _cur -= n; return *this; }
-			virtual _Self operator+(difference_type n) const { return IteratorImp(_cur + n); }
-			virtual _Self operator-(difference_type n) const { return IteratorImp(_cur - n); }
-			virtual difference_type operator-(const _Self& before) { return _cur - before._cur; }
+			virtual difference_type operator-(const _Self& before) const { return _cur - before._cur; }
 		};
-		/*----------------------transpose iterator--------------------*/
+		//--------------transpose iterator------------------//
 		template<typename ValueType>
 		class TransposeIteratorImp :public IteratorImp<ValueType> {
 			friend class BasicMatrix<ValueType>;
@@ -346,14 +493,14 @@ namespace lpq {
 			pointer _beg, _end;
 			difference_type _step, _count;
 			TransposeIteratorImp(pointer beg, pointer end, pointer cur, difference_type step) :
-				Iterator(cur), _beg(beg), _end(end), _step(col), _count(0){}
+				IteratorImp(cur), _beg(beg), _end(end), _step(step), _count(1){}
 		public:
 			using _Self = TransposeIteratorImp<ValueType>;
 			using _Base = IteratorImp<ValueType>;
 			_Base* make_clone_ptr() const override { return new _Self(*this); }
 			_Base& operator++()override {  
 				if ((_cur + _step) < _end) {
-					_cur += step;
+					_cur += _step;
 					return *this;
 				}
 				if (_count < _step) {
@@ -364,26 +511,29 @@ namespace lpq {
 				return *this;
 			}
 			_Base& operator--()override {
-				if ((_cur - step) >= _beg) {
-					_cur -= step;
+				assert(_cur <= _end);
+				if (_cur == _end) {
+					--_cur;
 					return *this;
 				}
-				if (_count >= 0) {
-					_cur = _beg + --_count + step;
+				if ((_cur - _step) >= _beg) {
+					_cur -= _step;
+					return *this;
+				}
+				if (_count > 1) {
+					_cur = _end - (_step - --_count) -1;
 					return *this;
 				}
 				_cur = _beg - 1;
 				return *this;
 			}
-			_Self operator++(int) override { auto tmp = *this; ++(*this); return tmp; }
-			_Self operator--(int) override { auto tmp = *this; --(*this); return tmp; }
 			reference operator[](difference_type n) const override {
 				TransposeIteratorImp iter(*this);
 				iter.operator+=(n);
 				return *iter;
 			}
 			_Base& operator+=(difference_type n) override {
-				auto offset = n * step;
+				auto offset = n * _step;
 				if ((_cur + offset) < _end) {
 					_cur += offset;
 					return *this;
@@ -401,33 +551,46 @@ namespace lpq {
 				_cur = _beg + ((i + offset_i) * _step + j + offset_j);
 				return *this;
 			}
-			_Self& operator-=(difference_type n)override { return operator+=(-n); }
-			_Self operator+(difference_type n) const override { _Self tmp(*this); tmp += n; return tmp; }
-			_Self operator-(difference_type n) const override { _Self tmp(*this); tmp -= n; return tmp; }
-			difference_type operator-(const _Self& before) const override{
+			_Base& operator-=(difference_type n)override { return operator+=(-n); }
+			difference_type operator-(const _Base& before) const override{
 				auto GetRowImp = [](auto b, auto col) {return [=](auto e) {return static_cast<difference_type>((e - b) / col); }; };
 				auto GetColImp = [](auto b, auto col) {return [=](auto e) {return static_cast<difference_type>((e - b) % col); }; };
 				auto GetRow = GetRowImp(_beg, _step);
 				auto GetCol = GetColImp(_beg, _step);
 				auto row = GetRow(_end);
-				auto CvtColIndex = [=row, &](auto cur) {return GetCol(cur) * row + GetRow(cur); };
+				auto CvtColIndex = [&](auto cur) {return GetCol(cur) * row + GetRow(cur); };
 				return CvtColIndex(_cur) - CvtColIndex(before._cur);
 			}
 
 		};
-
+		//--------------------------------------------------//
+		template<typename T1, typename T2>
+		static void BinaryOperate(const Matrix& left, const Matrix& right, Matrix& dest, std::function<ValueType(T1, T2)> op) {
+			assert(left.Size() == right.Size());
+			if (dest.Size() != left.Size()) {
+				dest.Alloc(left.row, left.col);
+			}
+			std::transform(left.BeginByRow(), left.EndByRow(), right.BeginByRow(), dest.BeginByRow(), op);
+		}
+		template<typename ConstNumType>
+		static void UnaryOperate(const Matrix& src, Matrix& dest, std::function<ValueType(ConstNumType)> op) {
+			if (dest.Size() != src.Size()) {
+				dest.Alloc(src.row, src.col);
+			}
+			std::transform(src.BeginByRow(), src.EndByRow(), dest.BeginByRow(), op);
+		}
 	};
 
 }
 
 namespace std {
-	template<typename ...T>
-	void swap(lpq::BasicPoint<T...>& left, lpq::BasicPoint<T...>& right) noexcept {
+	template<typename ...ConstNumType>
+	void swap(lpq::BasicPoint<ConstNumType...>& left, lpq::BasicPoint<ConstNumType...>& right) noexcept {
 		left.swap(right);
 	}
 
-	template<typename T>
-	void swap(lpq::BasicMatrix<T>& left, lpq::BasicMatrix<T>& right) noexcept {
+	template<typename ConstNumType>
+	void swap(lpq::BasicMatrix<ConstNumType>& left, lpq::BasicMatrix<ConstNumType>& right) noexcept {
 		left.swap(right);
 	}
 }
