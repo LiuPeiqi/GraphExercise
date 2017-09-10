@@ -184,6 +184,7 @@ namespace lpq {
 		return BasicPoint<ArgTypes...>(args...);
 	}
 
+
 	template<typename ValueType>
 	class BasicMatrix {//if not change org data ptr, it will not delete memory;
 	public:
@@ -362,72 +363,72 @@ namespace lpq {
 
 		Matrix operator+ (const Matrix& right) const {
 			Matrix tmp;
-			BinaryOperate(*this, right, tmp, [](const ValueType& l, const ValueType& r) {return l + r; });
+			BinaryOperate<ValueType, ValueType>(*this, right, tmp, [](ValueType l, ValueType r) {return l + r; });
 			return std::move(tmp);
 		}
 		template<typename ConstNumType>
 		Matrix operator+ (ConstNumType n) const {
 			Matrix tmp;
-			UnaryOperate(*this, tmp, [=](const ValueType& l) {return static_cast<ValueType>(l + n); });
+			UnaryOperate<ConstNumType>(*this, tmp, [=](ValueType l) {return static_cast<ValueType>(l + n); });
 			return std::move(tmp);
 		}
 		Matrix operator- (const Matrix& right) const {
 			Matrix tmp;
-			BinaryOperate(*this, right, tmp, [](const ValueType& l, const ValueType& r) {return l - r; });
+			BinaryOperate<ValueType, ValueType>(*this, right, tmp, [](ValueType l, ValueType r) {return l - r; });
 			return std::move(tmp);
 		}
 		template<typename ConstNumType>
 		Matrix operator- (ConstNumType n) const {
 			Matrix tmp;
-			UnaryOperate(*this, tmp, [=](const ValueType& l) {return static_cast<ValueType>(l - n); });
+			UnaryOperate<ConstNumType>(*this, tmp, [=](ValueType l) {return static_cast<ValueType>(l - n); });
 			return std::move(tmp);
 		}
 		template<typename ConstNumType>
 		Matrix operator* (ConstNumType n) const {
 			Matrix tmp;
-			UnaryOperate(*this, tmp, [=](const ValueType& l) {return static_cast<ValueType>(l * n); });
+			UnaryOperate<ConstNumType>(*this, tmp, [=](ValueType l) {return static_cast<ValueType>(l * n); });
 			return std::move(tmp);
 		}
 		template<typename ConstNumType>
 		Matrix operator/ (ConstNumType n) const {
 			Matrix tmp;
-			UnaryOperate(*this, tmp, [=](const ValueType& l) {return static_cast<ValueType>(l / n); });
+			UnaryOperate<ConstNumType>(*this, tmp, [=](ValueType l) {return static_cast<ValueType>(l / n); });
 			return std::move(tmp);
 		}
 		Matrix& operator+=(const Matrix& right) {
-			BinaryOperate(*this, right, *this, [](const ValueType& l, const ValueType& r) {return l + r; });
+			BinaryOperate(*this, right, *this, [](ValueType l, ValueType r) {return l + r; });
 			return *this;
 		}
 		template<typename ConstNumType>
 		Matrix& operator+= (ConstNumType n) {
-			UnaryOperate(*this, *this, [=](const ValueType& l) {return static_cast<ValueType>(l + n); });
+			UnaryOperate<ConstNumType>(*this, *this, [=](ValueType l) {return static_cast<ValueType>(l + n); });
 			return *this;
 		}
 		Matrix& operator-=(const Matrix& right) {
-			BinaryOperate(*this, right, *this, [](const ValueType& l, const ValueType& r) {return l - r; });
+			BinaryOperate<ValueType, ValueType>(*this, right, *this, [](ValueType l, ValueType r) {return l - r; });
 			return *this;
 		}
 		template<typename ConstNumType>
 		Matrix& operator-= (ConstNumType n)  {
-			UnaryOperate(*this, *this, [=](const ValueType& l) {return static_cast<ValueType>(l - n); });
+			UnaryOperate<ConstNumType>(*this, *this, [=](ValueType l) {return static_cast<ValueType>(l - n); });
 			return *this;
 		}
 		Matrix DotProduct(const Matrix& right) const {
 			Matrix tmp;
-			BinaryOperate(*this, right, tmp, [](const ValueType& l, const ValueType& r) {return l * r; });
+			BinaryOperate<ValueType, ValueType>(*this, right, tmp, [](ValueType l, ValueType r) {return l * r; });
 			return std::move(tmp);
 		}
 		Matrix& DotProductInSelf(const Matrix& right)  {
-			BinaryOperate(*this, right, *this, [](const ValueType& l, const ValueType& r) {return l * r; });
+			BinaryOperate<ValueType, ValueType>(*this, right, *this, [](ValueType l, ValueType r) {return l * r; });
 			return *this;
 		}
 		Matrix DotDivision(const Matrix& right) const {
 			Matrix tmp;
-			BinaryOperate(*this, right, tmp, [](const ValueType& l, const ValueType& r) {return l / r; });
+			BinaryOperate<ValueType, ValueType>(*this, right, tmp, [](ValueType l, ValueType r) {return l / r; });
 			return std::move(tmp);
 		}
 		Matrix& DotDivisionInSelf(const Matrix& right) {
-			BinaryOperate(*this, right, *this, [](const ValueType& l, const ValueType& r) {return l / r; });
+			BinaryOperate<ValueType, ValueType>(*this, right, *this, [](ValueType l, ValueType r) {return l / r; });
 			return *this;
 		}
 		Matrix operator*(const Matrix& right) const {
@@ -438,7 +439,7 @@ namespace lpq {
 			for (size_t i = 0; i < res.row; ++i) {
 				auto col_iter = right.BeginByColumn();
 				auto row_iter = row_iter_backup;
-				for (size_t j = 0; j < rew.col; ++j) {
+				for (size_t j = 0; j < res.col; ++j) {
 					row_iter = row_iter_backup;
 					*res_iter = ValueType{};
 					for (size_t k = 0; k < col; ++k) {
@@ -450,7 +451,26 @@ namespace lpq {
 				}
 				row_iter_backup = row_iter;
 			}
-			return std::move(rew);
+			return std::move(res);
+		}
+		static Matrix Zero(size_t row, size_t col) {
+			Matrix zero(row, col);
+			std::fill_n(zero.data, row*col, ValueType{});
+			return std::move(zero);
+		}
+		static Matrix One(size_t row, size_t col) {
+			auto one = Zero(row, col);
+			one += 1;
+			return std::move(one);
+		}
+		static Matrix Identity(size_t row, size_t col) {
+			auto identity = Zero(row, col);
+			auto min_rank = std::min(row, col);
+			auto iter = identity.data;
+			for (size_t i = 0; i < min_rank; ++i) {
+				*iter = 1;
+				iter += col;
+			}
 		}
 protected:
 		using ValueTypePtr = ValueType*;
@@ -570,6 +590,7 @@ protected:
 			if (dest.Size() != left.Size()) {
 				dest.Alloc(left.row, left.col);
 			}
+#define _SCL_SECURE_NO_WARNINGS
 			std::transform(left.BeginByRow(), left.EndByRow(), right.BeginByRow(), dest.BeginByRow(), op);
 		}
 		template<typename ConstNumType>
@@ -577,6 +598,7 @@ protected:
 			if (dest.Size() != src.Size()) {
 				dest.Alloc(src.row, src.col);
 			}
+#define _SCL_SECURE_NO_WARNINGS
 			std::transform(src.BeginByRow(), src.EndByRow(), dest.BeginByRow(), op);
 		}
 	};
