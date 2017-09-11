@@ -165,7 +165,7 @@ TEST(Matrix, MatrixMathematics) {
 	m1 += 1;
 	EXPECT_EQ(m1, m2);
 	m1 -= 1;
-	EXPECT_EQ(m1, m2);
+	EXPECT_EQ(m1 + 1, m2);
 	std::array<double, 15> data4{ 2, 6, 12, 20, 30, 42, 56, 72, 90, 110, 132, 156, 182, 210, 240 };
 	auto m4 = lpq::BasicMatrix<double>(3, 5, data4.data());
 	m1.DotProductInSelf(m2);

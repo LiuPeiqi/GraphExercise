@@ -466,11 +466,13 @@ namespace lpq {
 		static Matrix Identity(size_t row, size_t col) {
 			auto identity = Zero(row, col);
 			auto min_rank = std::min(row, col);
+			++col;
 			auto iter = identity.data;
 			for (size_t i = 0; i < min_rank; ++i) {
 				*iter = 1;
 				iter += col;
 			}
+			return identity;
 		}
 protected:
 		using ValueTypePtr = ValueType*;
@@ -590,7 +592,6 @@ protected:
 			if (dest.Size() != left.Size()) {
 				dest.Alloc(left.row, left.col);
 			}
-#define _SCL_SECURE_NO_WARNINGS
 			std::transform(left.BeginByRow(), left.EndByRow(), right.BeginByRow(), dest.BeginByRow(), op);
 		}
 		template<typename ConstNumType>
@@ -598,7 +599,6 @@ protected:
 			if (dest.Size() != src.Size()) {
 				dest.Alloc(src.row, src.col);
 			}
-#define _SCL_SECURE_NO_WARNINGS
 			std::transform(src.BeginByRow(), src.EndByRow(), dest.BeginByRow(), op);
 		}
 	};
