@@ -21,5 +21,8 @@
     <ClCompile Include="..\..\src\UnitTest\test_matrix.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\src\UnitTest\test_transformation.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>

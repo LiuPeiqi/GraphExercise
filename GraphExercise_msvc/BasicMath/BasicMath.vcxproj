@@ -20,6 +20,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\include\BasicMath\Matrix.h" />
+    <ClInclude Include="..\..\include\BasicMath\Transformation.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\src\BasicMath\testmain.cpp" />

@@ -50,23 +50,26 @@ namespace lpq {
 		constexpr bool operator<=(const _Derived&) const noexcept { return true; }
 		constexpr bool operator>=(const _Derived&) const noexcept { return true; }
 		constexpr bool operator!=(const _Derived&) const noexcept { return true; }
-		constexpr unsigned char Dot(const _Derived&) const noexcept{ return 0; }
+		constexpr unsigned int Dot(const _Derived&) const noexcept{ return 0; }
+		constexpr unsigned int Scale(const _Derived&) const noexcept { return 1; }
 		void swap(_Derived&) noexcept {}
 	};
 
-	template<typename _This, typename ...Rest>
-	class BasicPoint<_This, Rest...>
-		: private BasicPoint<Rest...>{
-		using _Base = BasicPoint<Rest...>;
+	template<typename _This, typename ..._Rest>
+	class BasicPoint<_This, _Rest...>
+		: private BasicPoint<_Rest...>{
+	public:
+		enum { dimension = (1 + sizeof...(_Rest)) };
+		using ValueType = _This;
+		using _Base = BasicPoint<_Rest...>;
+		using _Derived = BasicPoint<_This, _Rest...>;
+	private:
 		_Base& _GetRest() { return *this; }
 		BasicPoint(_Base _base, _This _value) noexcept : _Base(_base), value(_value) {}
 	public:
-		enum { dimension = (1 + sizeof...(Rest)) };
-		using ValueType = _This;
-		using _Derived = BasicPoint<_This, Rest...>;
 		_This value;
 		BasicPoint() noexcept : _Base(), value{} {}
-		BasicPoint(Rest ..._rest, _This _value) noexcept : _Base(_rest...), value(_value) {}
+		BasicPoint(_Rest ..._rest, _This _value) noexcept : _Base(_rest...), value(_value) {}
 		BasicPoint(const _Derived&) noexcept = default;
 		BasicPoint(_Derived&&) noexcept = default;
 		_Derived& operator=(const _Derived&)noexcept = default;
@@ -77,6 +80,17 @@ namespace lpq {
 		template<size_t Index> typename std::enable_if<(Index + 1) < dimension, typename _Base::ValueType>::type&
 			At() noexcept { return _Base::At<Index>(); }
 		template<size_t Index> ValueType At() const noexcept { return const_cast<_Derived*>(this)->At<Index>(); }
+
+		template<typename OtherPoint>
+		static _Derived& ConvertTo(OtherPoint& other) {
+			static_assert(OtherPoint::dimension > _Derived::dimension, "left dimension must less than right!");
+			return reinterpret_cast<_Derived&>(other); 
+		}
+		template<typename OtherPoint>
+		OtherPoint& ConvertTo() {
+			static_assert(dimension > OtherPoint::dimension, "left dimension must less than right!");
+			return reinterpret_cast<OtherPoint&>(*this);
+		}
 
 		_Derived operator+ (const _Derived& right) const noexcept {
 			return _Derived(_Base::operator+(right._GetRest()), value + right.value);
@@ -145,6 +159,14 @@ namespace lpq {
 		_This Dot(const _Derived& right) const noexcept{
 			return value * right.value + _Base::Dot(right._GetRest());
 		}
+		static _Derived Scale(const _Derived& left, const _Derived& right) {
+			return _Derived(left._GetRest().Scale(right._GetRest()), left.value * right.value);
+		}
+		_Derived& Scale(const _Derived& right) {
+			value *= right.value;
+			_Base::Scale(right._GetRest());
+			return *this;
+		}
 		void swap(_Derived& other) noexcept { std::swap(value, other.value); _Base::swap(other._GetRest()); }
 	};
 
@@ -170,9 +192,9 @@ namespace lpq {
 	using PointARGB = Point4D<unsigned char>;
 	using PointARGBf = Point4D<float>;
 
-	template<typename First, typename Second, typename ...Rest>
+	template<typename First, typename Second, typename ..._Rest>
 	constexpr bool _CHECK_ARGS_TYPES() {
-		return std::is_same<First, Second>::value && _CHECK_ARGS_TYPES<Second, Rest...>();
+		return std::is_same<First, Second>::value && _CHECK_ARGS_TYPES<Second, _Rest...>();
 	}
 	template<typename Last>
 	constexpr bool _CHECK_ARGS_TYPES() {
@@ -244,7 +266,8 @@ namespace lpq {
 			std::swap(col, right.col);
 			std::swap(col_step, right.col_step);
 		}
-
+		ValueType* _data() noexcept { return data; }
+		const ValueType* _data() const noexcept { return data; }
 		/* size info */
 
 		bool Empty() const noexcept { return 0 == row || 0 == col; }
@@ -332,6 +355,11 @@ namespace lpq {
 				return iterator(new TransposeIteratorImp<ValueType>(data, data + row*col, data, col_step));
 			}
 		}
+		iterator BeginByRow(size_t row)const {
+			assert(row < this->row);
+			auto offset = row * col;
+			return BeginByRow() + offset;
+		}
 		iterator EndByRow()const {
 			if (1 == col_step || std::min(row, col) == 1) {
 				return iterator(new IteratorImp<ValueType>(data + row*col));
@@ -348,6 +376,11 @@ namespace lpq {
 			else {
 				return iterator(new TransposeIteratorImp<ValueType>(data, data + row*col, data, col));
 			}
+		}
+		iterator BeginByColumn(size_t col)const {
+			assert(col < this->col);
+			auto offset = col * row;
+			return BeginByColumn() + offset;
 		}
 		iterator EndByColumn()const {
 			if (1 != col_step || std::min(row, col) == 1) {
@@ -602,6 +635,53 @@ protected:
 			std::transform(src.BeginByRow(), src.EndByRow(), dest.BeginByRow(), op);
 		}
 	};
+	template<typename ValueType>
+	using Matrix = BasicMatrix<ValueType>;
+	using MatrixB = BasicMatrix<unsigned char>;
+	using MatrixI = BasicMatrix<int>;
+	using MatrixF = BasicMatrix<float>;
+	using MatrixD = BasicMatrix<double>;
+
+	template<typename PointType>
+	constexpr
+		typename std::enable_if<PointType::dimension == 1, bool>::type
+		_CHECK_POINTS_ARGS_TYPES() {
+		return true;
+	}
+	template<typename PointType>
+	constexpr
+		typename std::enable_if<PointType::dimension != 1, bool>::type
+		_CHECK_POINTS_ARGS_TYPES() {
+		return _CHECK_ARGS_TYPES<typename PointType::ValueType,
+			typename PointType::_Base::ValueType>() &&
+			_CHECK_POINTS_ARGS_TYPES<typename PointType::_Base>();
+	}
+
+	template<typename PointType>
+	Matrix<typename PointType::ValueType> ReferenceByMatrix(PointType& p) {
+		static_assert(_CHECK_POINTS_ARGS_TYPES<PointType>(), "Argements Types of Point is not same!");
+		auto mat = Matrix<typename PointType::ValueType>(1, p.dimension,
+			reinterpret_cast<typename PointType::ValueType*>(&p));
+		return std::move(mat);
+	}
+	template<typename PointType>
+	PointType& ReferenceByPoint(Matrix<typename PointType::ValueType>& mat) {
+		return reinterpret_cast<PointType&>(*mat._data());
+	}
+	template<typename PointType>
+	Matrix<typename PointType::ValueType> MakeHomogeneousMatrix(PointType p) {
+		static_assert(_CHECK_POINTS_ARGS_TYPES<PointType>(), "Argements Types of Point is not same!");
+		auto mat = Matrix<typename PointType::ValueType>(1, p.dimension + 1);
+		auto iter = mat.BeginByRow();
+		typename PointType::ValueType* value_iter = reinterpret_cast<typename PointType::ValueType*>(&p);
+		for (size_t i = 0; i < p.dimension; ++i) {
+			*iter = *value_iter;
+			++iter;
+			++value_iter;
+		}
+		*iter = 1;
+		return std::move(mat);
+	}
 
 }
 
